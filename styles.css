@@ -1,0 +1,662 @@
+/* WORM - garden puzzle game */
+
+/* Self-hosted Baloo 2 - see fonts/README.md to fetch the .woff2 files.
+   If a file is missing, the browser just fails that @font-face quietly
+   and --font-display falls through to ui-rounded/system-ui below, so
+   the game still looks right (system font) before the fetch is run. */
+/* Self-hosted Baloo 2. Google ships it as ONE variable font covering
+   weights 400-800 (the three files in fonts/ are byte-identical copies of
+   it), so a single face with a weight range lets 600/700/800 each render
+   at their true weight from one download. */
+@font-face{
+  font-family:'Baloo 2';font-style:normal;font-weight:400 800;font-display:swap;
+  src:url('fonts/Baloo2-Bold.woff2') format('woff2');
+}
+
+:root{
+  --green-dark:#1c5b21;
+  --green:#43a047;
+  --green-light:#8ee060;
+  --cream:#fff7e6;
+  --ink:#3a2e1f;
+  --orange:#ff9f1c;
+  --pink:#ff8fab;
+
+  /* Two-font system: a bouncy display face for brand/headline moments,
+     a plain system face for anything meant to be read at length. Mixing
+     one personality font with one workhorse font reads as designed;
+     using the display font for everything reads as a template. */
+  --font-display:'Baloo 2',ui-rounded,'SF Pro Rounded',sans-serif;
+  --font-body:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+
+  /* Shared radius scale - one set of stops used everywhere instead of
+     each component inventing its own corner. */
+  --r-sm:14px;
+  --r-md:20px;
+  --r-lg:28px;
+  --r-pill:999px;
+
+  /* Shared shadow scale - soft, single-layer elevation instead of the
+     hard offset-color "candy button" bevel. */
+  --sh-sm:0 2px 6px rgba(0,0,0,.22);
+  --sh-md:0 6px 16px rgba(0,0,0,.26);
+  --sh-lg:0 14px 32px rgba(0,0,0,.32);
+
+  --gold:#ffd54f;
+  --accent:#ff9f1c;   /* story dots, highlights */
+  --dim:#9a8a6c;      /* quiet secondary text on cream cards */
+  --ease-out:cubic-bezier(.22,1,.36,1);
+  --ease-spring:cubic-bezier(.2,1.5,.4,1);
+  --focus:0 0 0 3px rgba(255,255,255,.9),0 0 0 6px rgba(255,159,28,.85);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{height:100%;margin:0;padding:0;}
+body{
+  font-family:var(--font-body);
+  background:var(--green-dark);
+  color:#fff;
+  overflow:hidden;
+  overscroll-behavior:none;
+  user-select:none;
+  -webkit-user-select:none;
+  touch-action:manipulation;
+}
+button{font-family:inherit;}
+button:focus{outline:none;}
+button:focus-visible{box-shadow:var(--focus);}
+.hidden-a11y{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);}
+
+/* ---------- ICONS ---------- */
+.ic{width:22px;height:22px;display:block;}
+.ic-sm{width:16px;height:16px;}
+.ic-inline{width:15px;height:15px;display:inline-block;vertical-align:-2px;margin-right:5px;color:var(--pink);}
+.ic-star{width:1em;height:1em;display:inline-block;vertical-align:-.12em;}
+.ic-apple{width:17px;height:17px;display:block;margin-right:4px;}
+.ic-flip{transform:scaleX(-1);}
+#app{position:fixed;inset:0;overflow:hidden;}
+.screen{
+  position:absolute;inset:0;display:flex;flex-direction:column;
+  opacity:0;visibility:hidden;pointer-events:none;
+  transform:translateY(10px) scale(.985);
+  transition:opacity .22s ease, transform .22s ease, visibility 0s linear .22s;
+  z-index:1;
+}
+.screen.active{
+  opacity:1;visibility:visible;pointer-events:auto;
+  transform:none;
+  transition:opacity .22s ease, transform .22s ease, visibility 0s linear 0s;
+  z-index:2;
+}
+@media (prefers-reduced-motion:reduce){
+  .screen{transition:opacity .12s linear, visibility 0s linear .12s;transform:none;}
+}
+
+/* ---------- HOME ---------- */
+/* The home screen is the illustrated artwork, full-bleed: sky up top for
+   the logo, Wally and his apple in the middle, flowers along the bottom.
+   The picture drifts very slowly so the screen feels alive. */
+#screen-home{
+  background:#8fd0f3;overflow:hidden;
+  align-items:center;justify-content:space-between;
+  padding:calc(env(safe-area-inset-top,0px) + 46px) 24px calc(env(safe-area-inset-bottom,0px) + 26px);
+}
+#screen-home::before{
+  content:'';position:absolute;inset:-2%;z-index:0;
+  background:url('art/worm-home-art.jpg') center 58%/cover no-repeat;
+  animation:homedrift 18s ease-in-out infinite alternate;
+}
+#screen-home::after{ /* soft scrims so the logo and buttons stay legible on any crop */
+  content:'';position:absolute;inset:0;z-index:0;pointer-events:none;
+  background:linear-gradient(180deg,rgba(20,60,110,.18) 0%,rgba(20,60,110,0) 22%,rgba(20,40,10,0) 62%,rgba(20,40,10,.5) 100%);
+}
+@keyframes homedrift{from{transform:scale(1) translateY(0);}to{transform:scale(1.045) translateY(-1%);}}
+#screen-home > *{position:relative;z-index:1;}
+#screen-home > .corner-btn{position:absolute;}
+.home-top{display:flex;flex-direction:column;align-items:center;}
+.home-art{display:none;}
+/* Wide screens: a portrait picture stretched to cover would be a giant
+   close-up, so show it whole as a tall panel over a soft blurred copy. */
+@media (min-aspect-ratio:3/4){
+  #screen-home::before{filter:blur(26px) saturate(1.15) brightness(.85);inset:-6%;animation:none;}
+  #screen-home > .home-art{
+    display:block;position:absolute;z-index:0;top:0;bottom:0;left:50%;transform:translateX(-50%);
+    height:100%;aspect-ratio:1040/2272;max-width:100%;
+    background:url('art/worm-home-art.jpg') center/cover no-repeat;
+    box-shadow:0 0 60px 20px rgba(0,0,0,.25);
+    -webkit-mask-image:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent);
+            mask-image:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent);
+  }
+}
+.home-bottom{display:flex;flex-direction:column;align-items:center;}
+.logo{
+  font-family:var(--font-display);
+  font-size:clamp(96px,27vw,128px);font-weight:800;letter-spacing:1px;color:var(--orange);
+  /* Outline built from 8 offset shadow copies rather than -webkit-text-stroke:
+     a CSS stroke draws along the glyph's own outline, and on a heavy rounded
+     face like Baloo 2 the stroke overlaps itself where a letter's counters
+     sit close together (the R's bowl/leg junction) - that self-intersection
+     is what showed up as odd extra marks. Layered shadows are just flat
+     copies offset in each direction, so they can't self-intersect. */
+  text-shadow:
+    -3px -3px 0 #7a4200, 0 -3px 0 #7a4200, 3px -3px 0 #7a4200,
+    -3px 0 0 #7a4200, 3px 0 0 #7a4200,
+    -3px 3px 0 #7a4200, 0 3px 0 #7a4200, 3px 3px 0 #7a4200,
+    0 7px 0 #a05500, 0 16px 26px rgba(0,0,0,.3);
+  transform:rotate(-3deg);
+  line-height:1;
+}
+.tagline{
+  font-family:var(--font-display);
+  margin-top:10px;font-size:20px;font-weight:600;color:#fff;
+  text-shadow:0 2px 6px rgba(0,0,0,.3);text-align:center;line-height:1.35;
+}
+.big-btn{
+  font-family:var(--font-display);font-size:21px;font-weight:700;color:#fff;
+  background:linear-gradient(180deg,var(--green-light),#4c9a2a);
+  border:none;border-radius:var(--r-pill);padding:16px 64px;margin-top:14px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.35),inset 0 -3px 0 rgba(0,0,0,.12),var(--sh-md);
+  cursor:pointer;letter-spacing:.3px;
+  transition:transform .1s ease, box-shadow .1s ease;
+}
+@media (hover:hover){
+  .big-btn:hover{filter:brightness(1.06);transform:translateY(-1px);}
+  .icon-btn:hover,.world-arrow:hover:not(:disabled){background:rgba(0,0,0,.45);}
+  .ghost-btn:hover{background:rgba(255,255,255,.1);}
+  .lvl-node:not(.locked):hover .lvl-dot{transform:translateY(-2px) scale(1.04);}
+}
+.big-btn:active{
+  transform:translateY(2px) scale(.99);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.25),inset 0 -1px 0 rgba(0,0,0,.12),var(--sh-sm);
+}
+.play-btn{display:flex;flex-direction:column;align-items:center;line-height:1.1;min-width:220px;}
+.btn-sub{font-size:13px;font-weight:600;opacity:.9;margin-top:2px;letter-spacing:.2px;}
+.btn-sub:empty{display:none;}
+.home-foot{
+  margin-top:14px;font-family:var(--font-display);font-size:14px;font-weight:700;color:#fff;
+  background:rgba(0,0,0,.22);border-radius:var(--r-pill);padding:7px 16px;
+  display:flex;align-items:center;gap:6px;box-shadow:var(--sh-sm);
+}
+.home-foot:empty{display:none;}
+.home-foot .ic-star{color:var(--gold);}
+.home-foot .track{width:90px;height:6px;border-radius:3px;background:rgba(255,255,255,.25);overflow:hidden;}
+.home-foot .track i{display:block;height:100%;background:var(--gold);border-radius:3px;}
+.icon-btn{
+  background:rgba(0,0,0,.32);color:#fff;border:none;
+  width:44px;height:44px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;cursor:pointer;flex:0 0 auto;
+  box-shadow:var(--sh-sm);
+  transition:transform .1s ease;
+}
+.icon-btn{transition:transform .1s ease, background .15s ease;}
+.icon-btn:active{transform:scale(.92);}
+.corner-btn{position:absolute;top:calc(env(safe-area-inset-top,0px) + 14px);right:16px;}
+.icon-btn:disabled{opacity:.35;cursor:default;transform:none;}
+.soft-btn{
+  font-family:var(--font-display);font-size:15px;font-weight:700;color:#fff;
+  display:flex;align-items:center;gap:7px;margin-top:12px;padding:9px 18px;
+  background:rgba(0,0,0,.2);border:1.5px solid rgba(255,255,255,.35);border-radius:var(--r-pill);
+  cursor:pointer;box-shadow:var(--sh-sm);transition:transform .1s ease, background .15s ease;
+}
+.soft-btn:active{transform:scale(.94);}
+/* Play jumps straight into the frontier level now (map is secondary), so
+   the map needs its own way in from home. */
+.home-links{display:flex;gap:10px;}
+.home-links .soft-btn{margin-top:12px;}
+.soft-btn .ic{color:#fff;}
+
+/* ---------- TOP BARS ---------- */
+.topbar{
+  display:flex;align-items:center;gap:10px;
+  padding:calc(env(safe-area-inset-top,0px) + 10px) 14px 10px;
+}
+.world-title{font-family:var(--font-display);font-size:22px;font-weight:700;text-align:center;text-shadow:0 2px 4px rgba(0,0,0,.3);line-height:1.15;}
+.world-pager{display:flex;align-items:center;justify-content:center;gap:10px;padding:0 14px 8px;}
+.world-head{min-width:170px;display:flex;flex-direction:column;align-items:center;}
+.world-sub{font-family:var(--font-display);font-size:13px;font-weight:600;color:rgba(255,255,255,.8);display:flex;align-items:center;gap:4px;}
+.world-sub .ic-star{color:var(--gold);}
+.world-dots{display:flex;gap:6px;justify-content:center;padding:0 0 4px;}
+.world-dots i{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.3);transition:background .2s, transform .2s;}
+.world-dots i.on{background:#fff;transform:scale(1.25);}
+#level-path.slide-l{animation:slideL .28s var(--ease-out);}
+#level-path.slide-r{animation:slideR .28s var(--ease-out);}
+@keyframes slideL{from{opacity:0;transform:translateX(28px);}}
+@keyframes slideR{from{opacity:0;transform:translateX(-28px);}}
+.world-arrow{
+  background:rgba(0,0,0,.28);color:#fff;border:none;
+  width:36px;height:36px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;cursor:pointer;flex:0 0 auto;
+  box-shadow:var(--sh-sm);
+  transition:transform .1s ease;
+}
+.world-arrow:active{transform:scale(.9);}
+.world-arrow:disabled{opacity:.3;cursor:default;}
+.stars-pill{
+  display:flex;align-items:center;gap:5px;
+  font-family:var(--font-display);
+  background:rgba(0,0,0,.32);border-radius:var(--r-pill);padding:8px 14px;
+  font-size:14px;font-weight:700;color:#ffd54f;white-space:nowrap;
+  margin-left:auto;box-shadow:var(--sh-sm);
+}
+.hud-title{flex:1;min-width:0;text-align:center;line-height:1.15;}
+.hud-level{font-family:var(--font-display);font-size:18px;font-weight:800;text-shadow:0 2px 4px rgba(0,0,0,.3);}
+.hud-name{font-family:var(--font-display);font-size:13px;font-weight:600;color:rgba(255,255,255,.78);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.shared-chip{
+  font-family:var(--font-display);font-size:12px;font-weight:700;text-align:center;
+  color:#ffe9a8;background:rgba(0,0,0,.32);border:1px solid rgba(255,229,140,.35);
+  border-radius:var(--r-pill);margin:0 auto 6px;padding:5px 12px;width:fit-content;
+  max-width:calc(100% - 28px);
+}
+.hud-stats{display:flex;gap:8px;justify-content:center;padding:0 12px 4px;}
+.pill{
+  font-family:var(--font-display);
+  background:rgba(0,0,0,.36);border-radius:var(--r-pill);padding:6px 13px;
+  font-size:13px;font-weight:700;white-space:nowrap;box-shadow:var(--sh-sm);
+  transition:background .25s ease;
+}
+.stat{display:flex;align-items:center;gap:6px;border:1px solid rgba(255,255,255,.08);}
+.stat-label{font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:rgba(255,255,255,.7);}
+.stat-num{font-size:16px;font-weight:800;min-width:1ch;text-align:center;font-variant-numeric:tabular-nums;display:inline-block;}
+.stat-num.bump{animation:numbump .3s var(--ease-spring);}
+@keyframes numbump{40%{transform:scale(1.28);}}
+.pace{display:flex;gap:1px;font-size:12px;color:var(--gold);}
+.pace .ic-star{transition:color .3s ease, opacity .3s ease, transform .3s var(--ease-spring);}
+.pace .off{color:#fff;opacity:.25;transform:scale(.8);}
+/* the live star-pace countdown, e.g. "in 12" - how many moves are left
+   before the run drops to the next lower star tier */
+.pace-n{font-size:10px;font-weight:700;color:rgba(255,255,255,.55);margin-left:2px;letter-spacing:.2px;white-space:nowrap;transition:color .2s ease;}
+.pace-n.urgent{color:#ffb14a;}
+.pill.low{background:rgba(198,40,40,.8);animation:pulse 1s infinite;}
+@keyframes pulse{50%{transform:scale(1.06);}}
+
+/* ---------- LEVEL SELECT ---------- */
+#screen-levels{background:linear-gradient(180deg,#57a047 0%,#3c7f33 60%,#2c5f27 100%);}
+#level-path{
+  flex:1;overflow-y:auto;position:relative;
+  padding:20px 0 calc(env(safe-area-inset-bottom,0px) + 40px);
+  -webkit-overflow-scrolling:touch;
+}
+#level-path::before{
+  content:'';position:absolute;top:0;bottom:0;left:50%;width:6px;margin-left:-3px;
+  background-image:linear-gradient(#fff 55%,transparent 45%);
+  background-size:6px 22px;opacity:.35;border-radius:3px;
+}
+.lvl-row{display:flex;justify-content:center;margin:14px 0;position:relative;}
+.lvl-row:nth-child(odd) .lvl-node{margin-right:26%;}
+.lvl-row:nth-child(even) .lvl-node{margin-left:26%;}
+.lvl-node{
+  width:74px;display:flex;flex-direction:column;align-items:center;gap:4px;
+  background:none;border:none;cursor:pointer;padding:0;color:inherit;border-radius:var(--r-md);
+  transition:transform .1s ease;
+}
+.lvl-node:focus-visible{box-shadow:none;}
+.lvl-node:focus-visible .lvl-dot{box-shadow:var(--focus);}
+.lvl-dot{
+  width:62px;height:62px;border-radius:50%;
+  background:linear-gradient(180deg,#8ee060,#4c9a2a);
+  border:3px solid rgba(255,255,255,.9);color:#fff;
+  font-family:var(--font-display);font-size:22px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:inset 0 2px 0 rgba(255,255,255,.3),inset 0 -3px 4px rgba(0,0,0,.12),var(--sh-md);
+  transition:transform .15s var(--ease-out);
+}
+.lvl-node.current .lvl-dot{
+  background:linear-gradient(180deg,#ffc15a,#ff8a1c);
+  animation:nodeglow 1.8s ease-in-out infinite;
+}
+@keyframes nodeglow{
+  0%,100%{box-shadow:inset 0 2px 0 rgba(255,255,255,.35),0 0 0 0 rgba(255,193,90,.7),var(--sh-md);}
+  50%{box-shadow:inset 0 2px 0 rgba(255,255,255,.35),0 0 0 10px rgba(255,193,90,0),var(--sh-md);}
+}
+.lvl-node.perfect .lvl-dot{border-color:var(--gold);}
+.lvl-node:active{transform:scale(.94);}
+.lvl-node.locked .lvl-dot{background:linear-gradient(180deg,#a8a8a2,#74746c);color:rgba(255,255,255,.85);}
+.lvl-stars{font-size:13px;display:flex;gap:2px;color:var(--gold);filter:drop-shadow(0 1px 2px rgba(0,0,0,.45));height:16px;}
+.lvl-stars .off{color:rgba(255,255,255,.35);}
+.lvl-node.locked .lvl-stars{visibility:hidden;}
+
+/* ---------- SCREEN FLAVOR ----------
+   The level-map and in-game screens leave open space around the path and
+   the board (more of it the wider/taller the device). A themed backdrop
+   fills that space without competing with real UI, using the same layering
+   trick as the home screen: a ::before decoration sits at z-index:0 and
+   every direct child is forced to z-index:1 above it. Pure CSS gradients,
+   keyed off the data-theme attribute applyScreenTheme() sets in app.js -
+   no extra art assets needed. .screen is already position:absolute (that's
+   how screens fill the viewport and swap via opacity), so these pseudos
+   don't need - and must NOT add - their own position rule on the screen
+   itself: an #id selector would outrank .screen's class selector and
+   silently flip it to position:relative, breaking the fullscreen layout. */
+#screen-levels::before,#screen-game::before{
+  content:'';position:absolute;inset:0;z-index:0;pointer-events:none;
+}
+#screen-levels > *,#screen-game > *{position:relative;z-index:1;}
+
+#screen-levels[data-theme="garden"]::before,#screen-game[data-theme="garden"]::before{
+  background-image:
+    radial-gradient(140px 90px at 14% 10%,rgba(255,255,255,.32),transparent 70%),
+    radial-gradient(170px 110px at 88% 8%,rgba(255,255,255,.22),transparent 70%),
+    radial-gradient(280px 200px at 50% 102%,rgba(255,255,255,.10),transparent 70%);
+}
+#screen-levels[data-theme="riverbank"]::before,#screen-game[data-theme="riverbank"]::before{
+  background-image:
+    radial-gradient(220px 220px at 90% 12%,rgba(255,255,255,.16),transparent 70%),
+    radial-gradient(180px 180px at 8% 90%,rgba(255,255,255,.14),transparent 70%),
+    repeating-radial-gradient(circle at 12% 84%,rgba(255,255,255,.10) 0,rgba(255,255,255,.10) 2px,transparent 3px,transparent 16px);
+}
+#screen-levels[data-theme="orchard"]::before,#screen-game[data-theme="orchard"]::before{
+  background-image:
+    radial-gradient(260px 220px at 88% 10%,rgba(255,180,120,.22),transparent 70%),
+    radial-gradient(220px 180px at 8% 92%,rgba(255,140,180,.14),transparent 70%);
+}
+#screen-levels[data-theme="frost"]::before,#screen-game[data-theme="frost"]::before{
+  background-image:
+    radial-gradient(3px 3px at 20% 18%,rgba(255,255,255,.85),transparent 70%),
+    radial-gradient(2px 2px at 68% 12%,rgba(255,255,255,.7),transparent 70%),
+    radial-gradient(4px 4px at 85% 30%,rgba(255,255,255,.8),transparent 70%),
+    radial-gradient(2px 2px at 12% 55%,rgba(255,255,255,.6),transparent 70%),
+    radial-gradient(3px 3px at 90% 70%,rgba(255,255,255,.75),transparent 70%),
+    radial-gradient(2px 2px at 30% 85%,rgba(255,255,255,.6),transparent 70%),
+    radial-gradient(3px 3px at 75% 92%,rgba(255,255,255,.7),transparent 70%),
+    radial-gradient(240px 180px at 50% 0%,rgba(190,230,255,.18),transparent 75%);
+}
+#screen-levels[data-theme="tunnels"]::before,#screen-game[data-theme="tunnels"]::before{
+  background-image:
+    radial-gradient(5px 5px at 16% 22%,#ffe27a,transparent 70%),
+    radial-gradient(6px 6px at 82% 16%,#c9a6ff,transparent 70%),
+    radial-gradient(5px 5px at 88% 62%,#7fe8d0,transparent 70%),
+    radial-gradient(4px 4px at 10% 72%,#ffe27a,transparent 70%),
+    radial-gradient(5px 5px at 30% 90%,#c9a6ff,transparent 70%),
+    radial-gradient(180px 180px at 50% 50%,rgba(122,90,190,.14),transparent 75%);
+  opacity:.85;
+}
+#screen-levels[data-theme="nightshade"]::before,#screen-game[data-theme="nightshade"]::before{
+  background-image:
+    radial-gradient(60px 60px at 18% 20%,rgba(255,111,174,.28),transparent 70%),
+    radial-gradient(70px 70px at 85% 14%,rgba(157,78,221,.26),transparent 70%),
+    radial-gradient(55px 55px at 88% 68%,rgba(95,232,192,.20),transparent 70%),
+    radial-gradient(65px 65px at 12% 80%,rgba(157,78,221,.22),transparent 70%);
+}
+#screen-levels[data-theme="summit"]::before,#screen-game[data-theme="summit"]::before{
+  background-image:
+    linear-gradient(115deg,transparent 30%,rgba(127,232,255,.10) 45%,transparent 60%),
+    linear-gradient(100deg,transparent 40%,rgba(201,166,255,.10) 55%,transparent 72%),
+    radial-gradient(3px 3px at 22% 16%,#fff,transparent 70%),
+    radial-gradient(2px 2px at 70% 10%,#fff,transparent 70%),
+    radial-gradient(3px 3px at 85% 34%,#fff,transparent 70%),
+    radial-gradient(2px 2px at 14% 60%,#fff,transparent 70%),
+    radial-gradient(3px 3px at 92% 78%,#fff,transparent 70%);
+}
+/* Worm's Summit level-map only: a soft mountain silhouette behind the path,
+   echoing the world's name on the screen players spend the most time
+   scanning ahead on. Stacked as its own layer so it never competes with
+   the sparkle ::before above. */
+#screen-levels[data-theme="summit"]::after{
+  content:'';position:absolute;left:0;right:0;bottom:0;height:32%;z-index:0;pointer-events:none;
+  background:linear-gradient(180deg,rgba(20,36,58,0),rgba(14,26,44,.6));
+  clip-path:polygon(0% 100%,0% 55%,10% 40%,20% 58%,32% 22%,44% 50%,55% 30%,68% 52%,78% 18%,90% 46%,100% 30%,100% 100%);
+}
+
+/* ---------- GAME ---------- */
+#screen-game{background:linear-gradient(180deg,#2f7d33 0%,#256428 70%,#1c4f20 100%);}
+/* Side gutters keep the board (and the swipes that start on it) away from
+   the screen edges, where iOS and host apps listen for their own
+   "go back" edge-swipe. */
+#board-wrap{flex:1;display:flex;align-items:center;justify-content:center;min-height:0;
+  padding:6px 22px calc(env(safe-area-inset-bottom,0px) + 22px);touch-action:none;position:relative;
+  -webkit-touch-callout:none;}
+#game-canvas{display:block;touch-action:none;}
+
+/* ---------- MODALS ---------- */
+.modal{
+  position:absolute;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;
+  background:rgba(8,20,10,.58);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);padding:24px;
+  animation:fadein .2s ease;
+}
+@keyframes fadein{from{opacity:0;}}
+.modal.hidden{display:none;}
+.card{
+  background:var(--cream);color:var(--ink);border-radius:var(--r-lg);
+  width:min(86vw,340px);padding:28px 24px 24px;text-align:center;
+  box-shadow:var(--sh-lg);
+  animation:cardin .28s cubic-bezier(.2,1.4,.4,1);
+  max-height:86%;overflow-y:auto;
+}
+@keyframes cardin{from{transform:scale(.8) translateY(20px);opacity:0;}}
+.card-kicker{display:inline-block;font-family:var(--font-display);font-size:12px;font-weight:800;color:#fff;background:var(--orange);letter-spacing:.8px;text-transform:uppercase;padding:3px 12px;border-radius:var(--r-pill);}
+.card-title{font-family:var(--font-display);font-size:27px;font-weight:700;margin:6px 0 10px;}
+.card-body{font-family:var(--font-body);font-size:16px;line-height:1.55;color:#5a4c38;margin-bottom:18px;}
+.end-card{background:linear-gradient(180deg,#2c6b2f,#1d4d20);color:#fff;border:3px solid rgba(255,255,255,.15);}
+#end-canvas,#fail-canvas{width:150px;height:112px;animation:bob 1.6s ease-in-out infinite;}
+@keyframes bob{50%{transform:translateY(-8px);}}
+.end-nom{font-family:var(--font-display);font-size:29px;font-weight:700;margin:2px 0 8px;text-shadow:0 3px 0 rgba(0,0,0,.2);}
+.end-card{position:relative;}
+.end-stars{font-size:46px;display:flex;justify-content:center;align-items:flex-end;gap:6px;margin:4px 0 12px;height:58px;}
+.end-stars span{display:inline-block;color:#0f2e12;opacity:.55;transform:scale(.72);}
+.end-stars span:nth-child(2){margin-bottom:8px;}
+.end-stars span.lit{color:var(--gold);opacity:1;filter:drop-shadow(0 0 10px rgba(255,213,79,.75));}
+.end-stars span.pop{animation:starpop .45s cubic-bezier(.2,1.6,.4,1) forwards;}
+@keyframes starpop{0%{transform:scale(.4) rotate(-30deg);}100%{transform:scale(1.05) rotate(0);}}
+.end-stats{display:flex;justify-content:center;gap:10px;}
+.end-stat{flex:0 1 150px;background:rgba(0,0,0,.2);border-radius:var(--r-sm);padding:8px 0 6px;}
+.end-stat-label{font-family:var(--font-display);font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:rgba(255,255,255,.65);}
+.end-stat-num{font-family:var(--font-display);font-size:22px;font-weight:800;line-height:1.2;font-variant-numeric:tabular-nums;}
+/* Moves is the one metric that matters on the win card - score used to sit
+   next to it with equal billing but didn't do anything (no unlock, no
+   comparison beyond itself), so it's gone from here; give moves the room. */
+.end-stat.hero{flex:0 1 170px;padding:10px 0 8px;}
+.end-stat.hero .end-stat-num{font-size:30px;}
+.end-hint{font-family:var(--font-body);font-size:13px;color:rgba(255,255,255,.75);margin:-6px 0 12px;display:flex;align-items:center;justify-content:center;gap:4px;}
+.end-hint:empty{display:none;}
+.end-hint .ic-star{color:var(--gold);font-size:12px;}
+.badge{
+  position:absolute;top:14px;right:14px;
+  font-family:var(--font-display);font-size:12px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;
+  background:var(--gold);color:#5a3a00;padding:4px 10px;border-radius:var(--r-pill);
+  transform:rotate(6deg);box-shadow:var(--sh-sm);animation:badgein .5s .9s var(--ease-spring) both;
+}
+@keyframes badgein{from{transform:rotate(6deg) scale(0);}}
+.end-sub{font-family:var(--font-body);font-size:14px;font-weight:600;color:#cfe6c8;margin:4px 0 14px;}
+.end-card .big-btn{width:100%;padding:15px 0;margin-top:6px;}
+.ghost-btn{
+  font-family:var(--font-display);width:100%;margin-top:10px;padding:13px 0;font-size:17px;font-weight:700;
+  background:transparent;color:#fff;border:2px solid rgba(255,255,255,.65);border-radius:var(--r-pill);cursor:pointer;
+  transition:transform .1s ease, background .1s ease;
+}
+.ghost-btn:active{transform:scale(.96);background:rgba(255,255,255,.08);}
+.tutorial-card .big-btn{width:100%;padding:14px 0;}
+.tutorial-card .card-title{margin-top:10px;}
+
+@media (prefers-reduced-motion:reduce){
+  .lvl-node.current .lvl-dot,.pill.low,#end-canvas,#fail-canvas{animation:none;}
+  .card,.modal,#level-path.slide-l,#level-path.slide-r,#screen-home::before{animation:none;}
+}
+/* short phones: tighten the chrome so the board keeps its room */
+@media (max-height:700px){
+      .logo{font-size:clamp(80px,22vw,110px);}
+  }
+
+
+/* =================== v14 additions =================== */
+
+/* ---------- buttons: every tap squashes ---------- */
+.btn-row{display:flex;gap:10px;margin-top:10px;}
+.btn-row .ghost-btn{margin-top:0;flex:1;display:flex;align-items:center;justify-content:center;gap:6px;font-size:16px;padding:11px 0;}
+.big-btn:active,.ghost-btn:active,.soft-btn:active,.toggle-chip:active,.hat-tile:active,.set-row:active{transition-duration:.05s;}
+
+/* ---------- loading screen ---------- */
+#splash{
+  position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;
+  background:radial-gradient(ellipse at 50% 40%,#3d7a34 0%,#1f4d1f 70%,#153815 100%);
+  transition:opacity .35s ease, visibility 0s linear .35s;
+}
+#splash.gone{opacity:0;visibility:hidden;}
+.splash-scene{display:flex;flex-direction:column;align-items:center;gap:6px;}
+.splash-dig{width:220px;height:100px;overflow:visible;}
+.splash-worm{animation:dig 1.6s cubic-bezier(.45,.05,.55,.95) infinite;transform-origin:64px 78px;}
+@keyframes dig{
+  0%{transform:translate(-40px,34px) scaleY(.6);}
+  35%{transform:translate(20px,0) scaleY(1);}
+  65%{transform:translate(70px,0) scaleY(1);}
+  100%{transform:translate(130px,34px) scaleY(.6);}
+}
+.splash-clods circle{animation:clod 1.6s ease-out infinite;}
+.splash-clods circle:nth-child(2){animation-delay:.1s;}
+.splash-clods circle:nth-child(3){animation-delay:.2s;}
+@keyframes clod{0%{transform:translate(0,0);opacity:0;}20%{opacity:1;}100%{transform:translate(90px,-26px);opacity:0;}}
+.splash-text{font-family:var(--font-display);font-size:20px;font-weight:700;color:#fff;text-shadow:0 2px 4px rgba(0,0,0,.3);}
+.splash-text .dots i{font-style:normal;animation:dot 1.2s infinite;opacity:.2;}
+.splash-text .dots i:nth-child(2){animation-delay:.2s;}
+.splash-text .dots i:nth-child(3){animation-delay:.4s;}
+@keyframes dot{40%{opacity:1;}}
+
+/* ---------- level map: a winding tunnel with Wally on it ---------- */
+.world-title-row{display:flex;align-items:center;gap:8px;}
+.world-icon{width:22px;height:22px;color:#fff;filter:drop-shadow(0 2px 3px rgba(0,0,0,.3));}
+#level-path::before{display:none;}
+.map{position:relative;margin:0 auto;max-width:520px;}
+.map svg.tunnel{position:absolute;left:0;top:0;overflow:visible;pointer-events:none;}
+.map .tun-bed{fill:none;stroke:rgba(0,0,0,.28);stroke-width:26;stroke-linecap:round;}
+.map .tun-floor{fill:none;stroke:rgba(255,255,255,.08);stroke-width:14;stroke-linecap:round;}
+.map .tun-done{fill:none;stroke:rgba(255,236,170,.85);stroke-width:5;stroke-linecap:round;stroke-dasharray:0 13;}
+.map .lvl-node{position:absolute;}
+.map-avatar{position:absolute;width:64px;height:64px;pointer-events:none;z-index:3;}
+.lvl-dot{position:relative;z-index:2;}
+.lvl-node.just-unlocked .lvl-dot{animation:unlockpop .6s var(--ease-spring);}
+@keyframes unlockpop{0%{transform:scale(.6);}60%{transform:scale(1.15);}}
+
+/* ---------- in-game toast / coaching ---------- */
+.toast{
+  position:absolute;left:0;right:0;top:8px;margin:0 auto;width:max-content;transform:translateY(-6px);
+  max-width:min(340px,calc(100% - 48px));text-align:center;text-wrap:balance;
+  font-family:var(--font-display);font-size:15px;font-weight:700;line-height:1.25;color:var(--ink);
+  background:var(--cream);border-radius:var(--r-md);padding:8px 16px;box-shadow:var(--sh-md);
+  opacity:0;pointer-events:none;transition:opacity .25s ease, transform .3s var(--ease-spring);z-index:5;
+}
+.toast.show{opacity:1;transform:none;}
+
+/* ---------- pause: Wally asleep in his burrow ---------- */
+.pause-card{background:linear-gradient(180deg,#5a3a22,#3a2414);color:#fff;border:3px solid rgba(255,255,255,.12);}
+#pause-canvas{width:100%;height:150px;display:block;border-radius:var(--r-md);margin-bottom:6px;}
+.pause-title{margin:8px 0 2px;}
+.pause-sub{font-family:var(--font-display);font-size:14px;font-weight:600;color:rgba(255,236,210,.75);margin-bottom:12px;}
+.pause-card .big-btn{width:100%;padding:14px 0;margin-top:4px;}
+.toggle-chips{display:flex;justify-content:center;gap:10px;margin-top:16px;}
+.toggle-chip{
+  width:48px;height:48px;border-radius:50%;border:none;cursor:pointer;color:#fff;
+  background:rgba(255,255,255,.14);display:flex;align-items:center;justify-content:center;position:relative;
+  transition:background .15s ease, transform .1s ease, opacity .15s;
+}
+.toggle-chip:active{transform:scale(.9);}
+.toggle-chip[aria-checked="false"]{opacity:.45;}
+.toggle-chip[aria-checked="false"]::after{content:'';position:absolute;width:30px;height:3px;border-radius:2px;background:#fff;transform:rotate(-45deg);}
+
+/* ---------- settings ---------- */
+.settings-card{text-align:left;}
+.settings-card .card-title{text-align:center;}
+.settings-list{display:flex;flex-direction:column;gap:6px;margin:6px 0 18px;}
+.settings-card .big-btn,.wardrobe-card .big-btn{width:100%;padding:14px 0;margin-top:0;}
+.set-row{
+  display:flex;align-items:center;gap:12px;width:100%;padding:12px 12px;border:none;cursor:pointer;
+  background:rgba(58,46,31,.06);border-radius:var(--r-sm);color:var(--ink);text-align:left;
+  font-family:var(--font-display);font-size:17px;font-weight:700;transition:transform .1s ease;
+}
+.set-row:active{transform:scale(.98);}
+.set-row .ic{color:#8a6a40;flex:none;}
+.set-row .set-label{flex:1;display:flex;flex-direction:column;line-height:1.2;}
+.set-row .set-note{font-family:var(--font-body);font-size:12px;font-weight:500;color:#8a7550;}
+.switch{flex:none;width:48px;height:28px;border-radius:14px;background:#cfc3ad;position:relative;transition:background .2s ease;}
+.switch::after{content:'';position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .22s var(--ease-spring);}
+.set-row[aria-checked="true"] .switch{background:var(--green);}
+.set-row[aria-checked="true"] .switch::after{transform:translateX(20px);}
+/* replay list for story beats already seen - skipping one used to be
+   permanent, so this is the way back to it */
+.settings-subhead{font-family:var(--font-display);font-size:13px;font-weight:700;letter-spacing:.4px;color:#8a7550;text-transform:uppercase;margin:2px 0 8px;}
+.settings-story{display:flex;flex-direction:column;gap:6px;margin-bottom:18px;max-height:160px;overflow-y:auto;}
+.story-replay-row{
+  display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;border:none;cursor:pointer;
+  background:rgba(58,46,31,.06);border-radius:var(--r-sm);color:var(--ink);text-align:left;
+  font-family:var(--font-display);font-size:14px;font-weight:700;transition:transform .1s ease;
+}
+.story-replay-row:active{transform:scale(.98);}
+.story-replay-row::after{content:'▶';margin-left:auto;font-size:10px;color:#8a6a40;}
+
+/* ---------- wardrobe ---------- */
+.wardrobe-card{padding-top:20px;}
+#wardrobe-preview{width:150px;height:130px;display:block;margin:0 auto;}
+#wardrobe-name{margin:2px 0 2px;}
+.wardrobe-note{font-family:var(--font-body);font-size:13px;color:#8a7550;min-height:18px;margin-bottom:12px;display:flex;align-items:center;justify-content:center;gap:4px;}
+.wardrobe-note .ic-star{color:#e0a400;}
+.wardrobe-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:18px;}
+.hat-tile{
+  aspect-ratio:1;border-radius:var(--r-sm);border:2px solid transparent;background:rgba(58,46,31,.07);
+  cursor:pointer;padding:0;position:relative;display:flex;align-items:center;justify-content:center;
+  transition:transform .1s ease, border-color .15s ease, background .15s ease;
+}
+.hat-tile canvas{width:100%;height:100%;display:block;}
+.hat-tile:active{transform:scale(.92);}
+.hat-tile.on{border-color:var(--orange);background:rgba(255,159,28,.14);}
+.hat-tile.locked canvas{opacity:.28;filter:grayscale(1);}
+.hat-tile .lock{position:absolute;inset:auto 0 4px 0;font-family:var(--font-display);font-size:11px;font-weight:800;color:#8a7550;display:flex;align-items:center;justify-content:center;gap:2px;}
+.hat-tile .lock .ic-star{color:#e0a400;}
+
+/* ---------- end card extras ---------- */
+.end-unlock{
+  display:flex;align-items:center;justify-content:center;gap:8px;margin:-4px 0 12px;
+  font-family:var(--font-display);font-size:14px;font-weight:700;color:#1d4d20;
+  background:var(--gold);border-radius:var(--r-pill);padding:6px 14px;
+  animation:badgein .5s 1.1s var(--ease-spring) both;
+}
+.end-unlock[hidden]{display:none;}
+.end-unlock .ic{width:18px;height:18px;}
+
+/* ---------- iris transition ---------- */
+#iris{position:absolute;inset:0;z-index:120;pointer-events:none;display:none;}
+#iris.on{display:block;pointer-events:auto;}
+
+/* ---------- landscape phones: HUD in one row, board fills the rest ---------- */
+@media (orientation:landscape) and (max-height:560px){
+  #screen-game{padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+  #screen-game .topbar{padding-top:calc(env(safe-area-inset-top,0px) + 4px);padding-bottom:2px;}
+  #screen-game .hud-stats{position:absolute;top:calc(env(safe-area-inset-top,0px) + 10px);left:50%;transform:translateX(-50%);padding:0;z-index:3;}
+  #screen-game .hud-title{text-align:left;padding-left:4px;}
+  #board-wrap{padding:2px 72px 8px;}
+  #screen-home{padding-top:calc(env(safe-area-inset-top,0px) + 18px);}
+  #screen-home .logo{font-size:64px;}
+  #screen-home::before{background-position:center 64%;}
+}
+
+/* ---------- reduced motion (system setting OR in-app toggle) ---------- */
+body.rm .lvl-node.current .lvl-dot,body.rm .pill.low,body.rm #end-canvas,body.rm #fail-canvas,
+body.rm .card,body.rm .modal,body.rm #level-path.slide-l,body.rm #level-path.slide-r,
+body.rm .end-unlock,body.rm .badge,body.rm .splash-worm,body.rm .splash-clods circle,body.rm #screen-home::before{animation:none !important;}
+body.rm .screen{transition:opacity .12s linear, visibility 0s linear .12s;transform:none;}
+
+/* undo counter (shown when undos per level are limited) */
+#game-undo{position:relative;}
+#game-undo[data-left]::after{
+  content:attr(data-left);position:absolute;top:-3px;right:-3px;min-width:18px;height:18px;border-radius:9px;
+  background:var(--gold);color:#5a3a00;font-family:var(--font-display);font-size:11px;font-weight:800;line-height:18px;text-align:center;
+  box-shadow:var(--sh-sm);
+}
+#game-undo[data-left="0"]::after{background:rgba(255,255,255,.55);color:#333;}
+
+/* ---------- Wally & Pip story cards ---------- */
+.story-card{max-height:min(88dvh,700px);overflow-y:auto;padding-top:19px}
+#story-canvas{display:block;width:100%;height:116px;margin:0 auto 11px;border-radius:var(--r-sm);box-shadow:inset 0 0 0 2px rgba(44,95,43,.13)}
+.story-body{font-size:17px;line-height:1.42;font-weight:700;min-height:74px;display:flex;align-items:center;justify-content:center;white-space:pre-line;color:#665f4f}
+.story-dots{height:16px;display:flex;align-items:center;justify-content:center;gap:7px;margin:4px 0}
+.story-dots span{width:7px;height:7px;border-radius:50%;background:rgba(90,76,56,.25);transition:transform .2s var(--ease-spring), background .2s}
+.story-dots span.active{background:var(--accent);transform:scale(1.3)}
+.story-card .big-btn{width:100%;padding:13px 0;margin-top:5px}
+.story-skip{font:700 14px var(--font-body);background:none;border:0;color:var(--dim);padding:12px 18px 3px;cursor:pointer}
+.story-skip:focus-visible{box-shadow:var(--focus);border-radius:var(--r-sm);}
+/* the daisy that sits on top of story cards */
+.flower-topper{position:relative;width:34px;height:34px;margin:-8px auto 4px;}
+.flower-topper i,.flower-topper b{position:absolute;left:50%;top:50%;width:13px;height:13px;margin:-6.5px 0 0 -6.5px;border-radius:50%;}
+.flower-topper i{background:#fff;box-shadow:0 1px 2px rgba(90,76,56,.25);}
+.flower-topper i:nth-child(1){transform:rotate(0deg) translateY(-10px);}
+.flower-topper i:nth-child(2){transform:rotate(72deg) translateY(-10px);}
+.flower-topper i:nth-child(3){transform:rotate(144deg) translateY(-10px);}
+.flower-topper i:nth-child(4){transform:rotate(216deg) translateY(-10px);}
+.flower-topper i:nth-child(5){transform:rotate(288deg) translateY(-10px);}
+.flower-topper b{background:#ffcf3f;box-shadow:inset 0 -2px 0 rgba(0,0,0,.12);}
